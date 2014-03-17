@@ -28,9 +28,15 @@ default:
 endif
 
 
+load:
+	sudo ./sbull_load
+
+rm:
+	sudo ./sbull_unload
 
 clean:
-	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions
+	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c \
+	.tmp_versions modules.order Module.symvers sbull.ko.unsigned
 
 depend .depend dep:
 	$(CC) $(EXTRA_CFLAGS) -M *.c > .depend

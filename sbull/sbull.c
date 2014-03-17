@@ -28,7 +28,7 @@ static int sbull_major = 0;
 module_param(sbull_major, int, 0);
 static int hardsect_size = 512;
 module_param(hardsect_size, int, 0);
-static int nsectors = 1024;	/* How big the drive is */
+static int nsectors = 8*8*1024*2; /* How big the drive is */
 module_param(nsectors, int, 0);
 static int ndevices = 4;
 module_param(ndevices, int, 0);
@@ -47,7 +47,7 @@ module_param(request_mode, int, 0);
 /*
  * Minor number and partition management.
  */
-#define SBULL_MINORS	16
+#define SBULL_MINORS	2
 #define MINOR_SHIFT	4
 #define DEVNUM(kdevnum)	(MINOR(kdev_t_to_nr(kdevnum)) >> MINOR_SHIFT
 
@@ -91,6 +91,10 @@ static void sbull_transfer(struct sbull_dev *dev, unsigned long sector,
 		printk (KERN_NOTICE "Beyond-end write (%ld %ld)\n", offset, nbytes);
 		return;
 	}
+
+	printk (KERN_NOTICE "sbd transfer w:%d %p (%lX %lX) %X\n",
+		write, buffer, offset, nbytes, dev->size);
+
 	if (write)
 		memcpy(dev->data + offset, buffer, nbytes);
 	else
@@ -104,7 +108,8 @@ static void sbull_request(struct request_queue *q)
 {
 	struct request *req;
 
-	while ((req = blk_fetch_request(q)) != NULL) {
+	req = blk_fetch_request(q);
+	while (req != NULL) {
 		struct sbull_dev *dev = req->rq_disk->private_data;
 		if (req->cmd_type != REQ_TYPE_FS) {
 			printk (KERN_NOTICE "Skip non-fs request\n");
@@ -117,7 +122,9 @@ static void sbull_request(struct request_queue *q)
     //    			req->flags);
 		sbull_transfer(dev, blk_rq_pos(req), blk_rq_cur_sectors(req),
 				req->buffer, rq_data_dir(req));
-		__blk_end_request_cur(req, 0);
+                if ( ! __blk_end_request_cur(req, 0) ) {
+                        req = blk_fetch_request(q);
+                }
 	}
 }
 
@@ -184,13 +191,14 @@ static void sbull_full_request(struct request_queue *q)
 /*
  * The direct make request version.
  */
-static void sbull_make_request(struct request_queue *q, struct bio *bio)
+static int sbull_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct sbull_dev *dev = q->queuedata;
 	int status;
 
 	status = sbull_xfer_bio(dev, bio);
 	bio_endio(bio, status);
+	return 0;
 }
 
 
@@ -212,7 +220,7 @@ static int sbull_open(struct block_device *bdev, fmode_t mode)
 	return 0;
 }
 
-static void sbull_release(struct gendisk *disk, fmode_t mode)
+static int sbull_release(struct gendisk *disk, fmode_t mode)
 {
 	struct sbull_dev *dev = disk->private_data;
 
@@ -224,6 +232,7 @@ static void sbull_release(struct gendisk *disk, fmode_t mode)
 		add_timer(&dev->timer);
 	}
 	spin_unlock(&dev->lock);
+	return 0;
 }
 
 /*
@@ -383,6 +392,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 	dev->gd->private_data = dev;
 	snprintf (dev->gd->disk_name, 32, "sbull%c", which + 'a');
 	set_capacity(dev->gd, nsectors*(hardsect_size/KERNEL_SECTOR_SIZE));
+	printk("Add disk:%s\n", dev->gd->disk_name);
 	add_disk(dev->gd);
 	return;
 
@@ -430,6 +440,7 @@ static void sbull_exit(void)
 		del_timer_sync(&dev->timer);
 		if (dev->gd) {
 			del_gendisk(dev->gd);
+			printk("put disk:%s\n", dev->gd->disk_name);
 			put_disk(dev->gd);
 		}
 		if (dev->queue) {
