@@ -92,8 +92,8 @@ static void sbull_transfer(struct sbull_dev *dev, unsigned long sector,
 		return;
 	}
 
-	printk (KERN_NOTICE "sbd transfer w:%d %p (%lX %lX) %X\n",
-		write, buffer, offset, nbytes, dev->size);
+	printk (KERN_NOTICE "sbd transfer w:%d buf:%p mem:%p sz:%lX max_sz:%X\n",
+		write, buffer, dev->data+offset, nbytes, dev->size);
 
 	if (write)
 		memcpy(dev->data + offset, buffer, nbytes);
